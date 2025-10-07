@@ -514,4 +514,159 @@ git config --global i18n.commitencoding utf-8
 4. **Используйте `.gitignore`** для исключения ненужных файлов
 5. **Освойте ветвление (branches)** для работы над разными функциями
 
-Теперь вы готовы к работе с Git и GitHub! 🚀
+Вот как создать и настроить секретные ключи на сервере Ubuntu 24.04 для GitHub Actions:
+
+## 1. Генерация SSH ключей
+
+```bash
+# Перейдите в папку .ssh
+cd ~/.ssh
+
+# Сгенерируйте новую пару ключей (без парольной фразы для автоматизации)
+ssh-keygen -t ed25519 -C "github-actions-deploy" -f github_actions_key
+
+# Или используйте RSA (если нужна совместимость со старыми системами)
+ssh-keygen -t rsa -b 4096 -C "github-actions-deploy" -f github_actions_key
+```
+
+## 2. Настройка прав доступа
+
+```bash
+# Установите правильные права доступа
+chmod 600 github_actions_key      # приватный ключ
+chmod 644 github_actions_key.pub  # публичный ключ
+```
+
+## 3. Добавление публичного ключа на сервер
+
+### Для пользователя:
+```bash
+# Добавьте публичный ключ в authorized_keys
+cat github_actions_key.pub >> ~/.ssh/authorized_keys
+
+# Установите правильные права
+chmod 600 ~/.ssh/authorized_keys
+```
+
+### Для системного использования:
+```bash
+# Скопируйте публичный ключ в нужное место
+sudo mkdir -p /etc/ssh/authorized_keys
+sudo cp github_actions_key.pub /etc/ssh/authorized_keys/github_actions
+```
+
+## 4. Настройка SSH демона (опционально)
+
+Отредактируйте `/etc/ssh/sshd_config`:
+
+```bash
+sudo nano /etc/ssh/sshd_config
+```
+
+Добавьте или убедитесь, что есть следующие настройки:
+```
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys /etc/ssh/authorized_keys/%u
+PasswordAuthentication no  # Для безопасности
+```
+
+Перезапустите SSH:
+```bash
+sudo systemctl restart ssh
+```
+
+## 5. Настройка в GitHub Actions
+
+### Добавьте секреты в репозитории GitHub:
+
+1. **PRIVATE_KEY** - содержимое приватного ключа:
+```bash
+cat github_actions_key
+```
+
+2. **HOST** - IP адрес или домен сервера
+3. **USERNAME** - пользователь для подключения
+
+### Пример workflow файла (.github/workflows/deploy.yml):
+
+```yaml
+name: Deploy to Server
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup SSH
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+    - name: Deploy to server
+      run: |
+        ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "
+          cd /path/to/your/app &&
+          git pull origin main &&
+          docker-compose down &&
+          docker-compose up -d
+        "
+```
+
+## 6. Альтернативный способ с использованием secrets
+
+```yaml
+- name: Deploy via SSH
+  uses: appleboy/ssh-action@v1.0.3
+  with:
+    host: ${{ secrets.HOST }}
+    username: ${{ secrets.USERNAME }}
+    key: ${{ secrets.PRIVATE_KEY }}
+    script: |
+      cd /var/www/your-app
+      git pull
+      npm install
+      pm2 restart your-app
+```
+
+## 7. Дополнительные меры безопасности
+
+### Ограничение доступа по IP (в sshd_config):
+```
+Match Address "192.30.252.0/22"  # GitHub Actions IP range
+    PasswordAuthentication no
+    PubkeyAuthentication yes
+```
+
+### Создание отдельного пользователя:
+```bash
+# Создайте пользователя для деплоя
+sudo adduser deployer
+sudo usermod -aG www-data deployer
+
+# Настройте ключи для этого пользователя
+sudo su - deployer
+mkdir -p ~/.ssh
+# Добавьте публичный ключ в authorized_keys
+```
+
+## 8. Проверка подключения
+
+```bash
+# Локальная проверка
+ssh -i github_actions_key username@your-server -v
+```
+
+## Важные замечания:
+
+1. **Никогда не коммитьте приватные ключи** в репозиторий
+2. Используйте GitHub Secrets для хранения чувствительных данных
+3. Регулярно обновляйте ключи
+4. Ограничивайте права доступа ключей минимально необходимыми
+5. Используйте разные ключи для разных окружений
+
