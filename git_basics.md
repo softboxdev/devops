@@ -670,3 +670,11 @@ ssh -i github_actions_key username@your-server -v
 4. Ограничивайте права доступа ключей минимально необходимыми
 5. Используйте разные ключи для разных окружений
 
+```
+
+mkdir herobiz
+
+cd herobiz
+
+git clone названиевашегорепо
+```
