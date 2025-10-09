@@ -479,3 +479,29 @@ Kubernetes — это мощная платформа, которая превр
 - **Экосистему**: Богатый набор инструментов и расширений
 
 Благодаря этим возможностям Kubernetes стал стандартом де-факто для оркестрации контейнеров в современной IT-инфраструктуре.
+
+Пример pod:
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-pod
+  labels:
+    app: web
+    environment: production
+spec:
+  containers:
+  - name: nginx
+    image: nginx:1.21
+    ports:
+    - containerPort: 80
+  - name: logger
+    image: busybox
+    command: ['sh', '-c', 'while true; do echo logging...; sleep 10; done']
+status:
+  phase: Running
+  podIP: 10.244.1.2
+  conditions:
+  - type: Ready
+    status: "True"
+```
