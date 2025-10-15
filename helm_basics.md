@@ -305,13 +305,17 @@ helm install test ./my-first-chart
 
 ### **Упражнение 3: Работа с values**
 ```bash
-# Посмотрите значения по умолчанию
-helm show values bitnami/nginx
+# Добавить репозиторий NGINX
+helm repo add nginx-stable https://helm.nginx.com/stable
+helm repo update
 
-# Установите с изменением значений
-helm install my-nginx bitnami/nginx \
-  --set service.type=LoadBalancer \
-  --set replicaCount=3
+# Посмотреть значения
+helm show values nginx-stable/nginx-ingress
+
+# Установить
+helm install my-nginx nginx-stable/nginx-ingress \
+  --set controller.service.type=LoadBalancer \
+  --set controller.replicaCount=3
 ```
 
 ---
