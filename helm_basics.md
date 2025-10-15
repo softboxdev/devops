@@ -280,6 +280,10 @@ helm uninstall my-app
 # Установите WordPress с помощью Helm
 helm repo add bitnami https://charts.bitnami.com/bitnami
 helm install my-wordpress bitnami/wordpress
+# Или другой
+helm repo add stable https://charts.helm.sh/stable
+helm repo update
+helm search repo nginx
 
 # Проверьте что установилось
 helm list
