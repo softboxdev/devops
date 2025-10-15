@@ -39,6 +39,33 @@ policy-engine-demo/
 ### 1. Установка и настройка Kyverno
 
 **Файл: `01-kyverno-install.yaml`**
+
+```
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kyverno
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kyverno
+  namespace: kyverno
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kyverno
+  template:
+    metadata:
+      labels:
+        app: kyverno
+    spec:
+      containers:
+      - name: kyverno
+        image: kyverno/kyverno:v1.15.2 -> ваша версия посмотрите через kyverno version
+```
+
 ```yaml
 apiVersion: v1
 kind: Namespace
