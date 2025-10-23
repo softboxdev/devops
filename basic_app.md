@@ -1,4 +1,7 @@
 # Создание React проекта на Ubuntu 24.04
+Контакты: Telegram @almakonde
+soft.box.development@gmail.com
+
 
 ## 1. Установка Node.js и npm
 
