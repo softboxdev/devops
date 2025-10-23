@@ -118,22 +118,9 @@ git config --global init.defaultBranch main
 git config --global credential.helper store
 ```
 
-### Клонирование пустого проекта
 
-```bash
-# Получите SSH URL проекта из GitLab
-# Перейдите в ваш проект → Clone → Clone with SSH
-
-# Клонирование проекта
-git clone git@localhost:username/my-react-app.git
-
-# Переход в папку проекта
-cd my-react-app
-```
-
-## 5. Перенос React проекта в GitLab
-
-### Если React проект уже существует
+## 5. Залить React проект в GitLab
+, см инструкцию по созданию https://github.com/softboxdev/devops/blob/dev/basic_app.md
 
 ```bash
 # Перейдите в папку с существующим React проектом
