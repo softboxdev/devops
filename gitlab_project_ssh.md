@@ -50,24 +50,6 @@ ssh-add ~/.ssh/id_ed25519
      - **Visibility Level**: `Private` (рекомендуется)
    - Нажмите "Create project"
 
-### Способ 2: Через GitLab API (альтернативный)
-
-```bash
-# Установите необходимые инструменты
-sudo apt install -y jq
-
-# Создание проекта через API (замените токен и данные)
-GITLAB_URL="http://localhost"
-PRIVATE_TOKEN="your_private_token_here"
-
-curl -X POST "$GITLAB_URL/api/v4/projects" \
-  -H "PRIVATE-TOKEN: $PRIVATE_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "my-react-app",
-    "visibility": "private"
-  }'
-```
 
 ## 3. Добавление SSH ключа в GitLab
 
@@ -120,7 +102,7 @@ git config --global credential.helper store
 
 
 ## 5. Залить React проект в GitLab
-, см инструкцию по созданию https://github.com/softboxdev/devops/blob/dev/basic_app.md
+См. инструкцию по созданию https://github.com/softboxdev/devops/blob/dev/basic_app.md
 
 ```bash
 # Перейдите в папку с существующим React проектом
@@ -130,7 +112,7 @@ cd /path/to/your/react-project
 git init
 
 # Добавление удаленного репозитория
-git remote add origin git@localhost:username/my-react-app.git
+git remote add origin git@localhost:username/my-react-app.git(адресвашегорепозитория)
 
 # Добавление файлов в коммит
 git add .
@@ -145,25 +127,10 @@ git push -u origin main
 git push -u origin main:main --force
 ```
 
-### Если нужно создать новый React проект прямо в репозитории
-
-```bash
-# Клонируйте пустой репозиторий
-git clone git@localhost:username/my-react-app.git
-cd my-react-app
-
-# Создайте React проект
-npx create-react-app . --template typescript
-
-# Добавьте и закоммитьте файлы
-git add .
-git commit -m "Initial React app with TypeScript"
-git push -u origin main
-```
 
 ## 6. Настройка .gitignore для React проекта
 
-Убедитесь, что у вас есть правильный `.gitignore` файл:
+Убедитесь, что у вас есть правильный `.gitignore` файл в корне проекта:
 
 ```bash
 # Создайте .gitignore если его нет
