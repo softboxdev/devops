@@ -238,32 +238,7 @@ jspm_packages/
 EOF
 ```
 
-## 7. Добавление дополнительных файлов для проекта
-
-### Создание README.md
-
-```bash
-cat > README.md << EOF
-# My React App
-
-Этот проект был создан с помощью Create React App.
-
-## Установка и запуск
-
-\`\`\`bash
-npm install
-npm start
-\`\`\`
-
-## Сборка
-
-\`\`\`bash
-npm run build
-\`\`\`
-EOF
-```
-
-## 8. Настройка CI/CD (опционально)
+## 7. Настройка CI/CD 
 
 Создайте файл `.gitlab-ci.yml` в корне проекта:
 
