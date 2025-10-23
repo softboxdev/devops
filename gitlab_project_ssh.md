@@ -241,38 +241,219 @@ EOF
 ## 7. Настройка CI/CD 
 
 Создайте файл `.gitlab-ci.yml` в корне проекта:
+# Самый простой вариант деплоя React на localhost без nginx
+
+## 1. Простой .gitlab-ci.yml
 
 ```yaml
 image: node:16
 
 stages:
-  - test
   - build
+  - deploy
 
 cache:
   paths:
     - node_modules/
 
-before_script:
-  - npm install
-
-test:
-  stage: test
-  script:
-    - npm test -- --coverage --watchAll=false
-
 build:
   stage: build
   script:
+    - npm install
     - npm run build
   artifacts:
     paths:
       - build/
+    expire_in: 1 hour
   only:
     - main
+
+deploy_local:
+  stage: deploy
+  script:
+    - echo "Деплой React приложения на localhost:3001"
+    - cp -r build/* /tmp/react-app/
+    - echo "✅ Приложение успешно размещено по адресу: http://localhost:3001"
+  only:
+    - main
+  tags:
+    - local
 ```
 
-## 9. Защита приватных ключей и чувствительных данных
+## 2. Упрощенный вариант с прямым сервингом
+
+```yaml
+image: node:16
+
+stages:
+  - deploy
+
+deploy_local:
+  stage: deploy
+  script:
+    - echo "Установка зависимостей и запуск React приложения..."
+    - npm install
+    - npm install -g serve
+    - echo "🚀 Запуск приложения на порту 3001..."
+    - nohup serve -s build -l 3001 > /dev/null 2>&1 &
+    - echo "✅ Приложение доступно по адресу: http://localhost:3001"
+  only:
+    - main
+  tags:
+    - local
+```
+
+
+## 3. Самый минимальный вариант
+
+```yaml
+deploy_react:
+  image: node:16
+  script:
+    - npm install
+    - npm run build
+    - npm install -g serve
+    - pkill -f "serve.*3001" || true
+    - nohup serve -s build -l 3001 &
+    - echo "React app deployed to http://localhost:3001"
+  only:
+    - main
+  tags:
+    - local
+```
+
+## 4. Настройка сервера для деплоя
+
+### Подготовка директории:
+
+```bash
+# Создаем директорию для приложения
+sudo mkdir -p /tmp/react-app
+sudo chmod 755 /tmp/react-app
+
+# Или в домашней директории
+mkdir -p ~/my-react-apps
+```
+
+### Ручной запуск приложения (для тестирования):
+
+```bash
+# Переходим в папку с собранным приложением
+cd build
+
+# Запускаем с помощью serve
+npx serve -s . -l 3001
+
+# Или с помощью Python
+python -m http.server 3001
+
+# Или с помощью PHP
+php -S localhost:3001
+```
+
+
+
+## 5. Вариант с использованием PM2 для управления процессом
+
+```yaml
+image: node:16
+
+stages:
+  - deploy
+
+deploy_react:
+  stage: deploy
+  script:
+    - npm install
+    - npm run build
+    - npm install -g pm2 serve
+    - pm2 stop react-app || true
+    - pm2 delete react-app || true
+    - pm2 serve build 3001 --name react-app --spa
+    - pm2 save
+    - pm2 startup
+    - echo "✅ React app deployed with PM2: http://localhost:3001"
+  only:
+    - main
+  tags:
+    - local
+```
+
+## 6. Простой вариант с копированием и запуском
+
+```yaml
+deploy_simple:
+  image: node:16
+  script:
+    - echo "🔨 Building React app..."
+    - npm install
+    - npm run build
+    
+    - echo "📁 Copying files to deployment directory..."
+    - rm -rf /tmp/react-app-deploy
+    - mkdir -p /tmp/react-app-deploy
+    - cp -r build/* /tmp/react-app-deploy/
+    
+    - echo "🌐 Starting web server..."
+    - cd /tmp/react-app-deploy
+    - nohup python3 -m http.server 3001 &> server.log &
+    
+    - echo "🎉 DEPLOYMENT COMPLETE!"
+    - echo "📍 Your app is available at: http://localhost:3001"
+    - echo "📋 Server logs: /tmp/react-app-deploy/server.log"
+  only:
+    - main
+  tags:
+    - local
+```
+
+## 7. Проверка деплоя
+
+После запуска пайплайна проверьте:
+
+```bash
+# Проверьте что приложение запущено
+curl -I http://localhost:3001
+
+# Или откройте в браузере
+xdg-open http://localhost:3001
+
+# Посмотрите логи если нужно
+cat /tmp/react-app-deploy/server.log
+```
+
+## 10. Остановка приложения (если нужно)
+
+```bash
+# Найти и остановить процесс на порту 3001
+sudo lsof -ti:3001 | xargs kill -9
+
+# Или остановить все serve процессы
+pkill -f "serve.*3001"
+```
+
+## Самый рекомендуемый простой вариант:
+
+```yaml
+deploy_react_local:
+  image: node:16
+  script:
+    - npm install
+    - npm run build
+    - npm install -g serve
+    - pkill -f "serve.*3001" || true
+    - nohup serve -s build -l 3001 &> /tmp/react-app.log &
+    - echo "✅ React app deployed to: http://localhost:3001"
+  only:
+    - main
+  tags:
+    - local
+```
+
+
+
+
+## 8. Защита приватных ключей и чувствительных данных
 
 ### Важные предупреждения:
 
@@ -290,7 +471,7 @@ cp .env.example .env
 echo ".env" >> .gitignore
 ```
 
-## 10. Полезные команды для работы с GitLab
+## 9. Полезные команды для работы с GitLab
 
 ### Проверка статуса
 
@@ -325,7 +506,7 @@ git checkout -b feature/new-feature
 git push -u origin feature/new-feature
 ```
 
-## 11. Решение возможных проблем
+## 10. Решение возможных проблем
 
 ### Проблема с SSH подключением
 
