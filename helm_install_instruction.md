@@ -197,6 +197,28 @@ helm upgrade my-elasticsearch elastic/elasticsearch
 helm uninstall my-elasticsearch
 ```
 
+# 1. Установка Minikube -  в случае если кластер недоступен
+
+curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+sudo install minikube-linux-amd64 /usr/local/bin/minikube
+
+# 2. Запуск кластера
+minikube start --driver=docker
+
+# 3. Проверка кластера
+kubectl get nodes
+
+# 4. Добавление репозитория Elastic
+helm repo add elastic https://helm.elastic.co
+helm repo update
+
+# 5. Теперь установка Elasticsearch
+helm install my-elasticsearch elastic/elasticsearch
+
+# 6. Проверка установки
+helm list
+kubectl get pods
+
 ### 4. Работа с values
 
 ```bash
