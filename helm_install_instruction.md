@@ -657,3 +657,99 @@ helm package myapp-chart
 4. **Храните values файлы** в системе контроля версий
 5. **Используйте `helm template`** для генерации манифестов в CI/CD
 
+
+
+
+
+## 🔧 **Решения проблемы 403 Forbidden**
+
+### **Решение 1: Использование ECK (Elastic Cloud on Kubernetes) - РЕКОМЕНДУЕМЫЙ**
+
+ECK - это оператор для управления Elasticsearch в Kubernetes, он более современный и удобный:
+
+```bash
+# Добавляем репозиторий ECK
+helm repo add eck https://helm.elastic.co
+helm repo update
+
+# Устанавливаем ECK operator
+helm install eck-operator eck/eck-operator -n elastic-system --create-namespace
+
+# Ждем пока оператор запустится
+kubectl get pods -n elastic-system -w
+```
+
+**Создаем манифест для Elasticsearch:**
+```yaml
+# elasticsearch.yaml
+apiVersion: elasticsearch.k8s.elastic.co/v1
+kind: Elasticsearch
+metadata:
+  name: quickstart
+spec:
+  version: 8.11.0
+  nodeSets:
+  - name: default
+    count: 1
+    config:
+      node.store.allow_mmap: false
+    podTemplate:
+      spec:
+        containers:
+        - name: elasticsearch
+          resources:
+            requests:
+              memory: 1Gi
+              cpu: 500m
+            limits:
+              memory: 2Gi
+              cpu: 1000m
+```
+
+```bash
+# Применяем манифест
+kubectl apply -f elasticsearch.yaml
+
+# Проверяем статус
+kubectl get elasticsearch
+kubectl get pods -l elasticsearch.k8s.elastic.co/cluster-name=quickstart
+```
+
+### **Решение 2: Использование более старой версии Elasticsearch**
+
+```bash
+# Пробуем установить версию 7.x (может быть доступна без аутентификации)
+helm install kn-elasticsearch elastic/elasticsearch --version 7.17.3
+```
+
+
+### **Решение 3: Ручное скачивание и установка**
+
+```bash
+# Скачиваем чарт вручную (если доступно)
+wget https://github.com/elastic/helm-charts/releases/download/v8.5.1/elasticsearch-8.5.1.tgz
+
+# Устанавливаем из локального файла
+helm install kn-elasticsearch ./elasticsearch-8.5.1.tgz
+```
+
+
+## 🔍 **Проверка установки**
+
+После установки любым методом:
+
+```bash
+# Проверяем поды
+kubectl get pods
+
+# Проверяем сервисы
+kubectl get services
+
+# Проверяем логи
+kubectl logs deployment/kn-elasticsearch-elasticsearch
+
+# Проверяем готовность
+kubectl get elasticsearch  # для ECK
+# или
+helm status kn-elasticsearch  # для Bitnami
+```
