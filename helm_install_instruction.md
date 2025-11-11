@@ -197,7 +197,7 @@ helm upgrade my-elasticsearch elastic/elasticsearch
 helm uninstall my-elasticsearch
 ```
 
-# 1. Установка Minikube -  в случае если кластер недоступен
+# Установка Minikube -  в случае если кластер недоступен
 ```bash
 curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
 sudo install minikube-linux-amd64 /usr/local/bin/minikube
