@@ -538,7 +538,531 @@ spec:
 - **Secret** - это "сейф" который немного безопаснее чем открытый текст
 - **Всё вместе** - это мощная система для управления приложениями
 
+# Практическое руководство по Kubernetes на Ubuntu 24.04 с 4 ГБ ОЗУ
 
+## Подготовка окружения
+
+### 1. Установка MicroK8s
+
+```bash
+# Обновление системы
+sudo apt update && sudo apt upgrade -y
+
+# Установка MicroK8s (самый легковесный вариант для 4 ГБ ОЗУ)
+sudo snap install microk8s --classic
+
+# Добавление пользователя в группу microk8s
+sudo usermod -a -G microk8s $USER
+newgrp microk8s
+
+# Включение необходимых дополнений
+microk8s enable dns storage registry
+```
+
+### 2. Настройка для ограниченной памяти
+
+```bash
+# Создание конфигурационного файла для ограничения ресурсов
+sudo tee /var/snap/microk8s/current/args/containerd-template.toml > /dev/null <<EOF
+[plugins."io.containerd.grpc.v1.cri".containerd]
+  snapshotter = "overlayfs"
+  default_runtime_name = "runc"
+  
+  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+    runtime_type = "io.containerd.runc.v2"
+    
+  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+    SystemdCgroup = true
+    
+[plugins."io.containerd.grpc.v1.cri".containerd.untrusted_workload_runtime]
+  runtime_type = "io.containerd.runtime.v1.linux"
+  
+[plugins."io.containerd.grpc.v1.cri".cni]
+  bin_dir = "/var/snap/microk8s/current/opt/cni/bin"
+  conf_dir = "/var/snap/microk8s/current/args/cni-network"
+EOF
+
+# Перезапуск MicroK8s
+microk8s stop
+microk8s start
+```
+
+## Упражнение 1: Создание оптимизированных Pod'ов
+
+### Простейший Pod с ограничениями памяти
+
+```yaml
+# simple-pod.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-optimized
+  labels:
+    app: nginx
+spec:
+  containers:
+  - name: nginx-container
+    image: nginx:alpine  # Используем легковесный образ
+    ports:
+    - containerPort: 80
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+```
+
+Применяем конфигурацию:
+```bash
+microk8s kubectl apply -f simple-pod.yaml
+```
+
+### Проверка состояния Pod'а
+
+```bash
+# Проверить статус pod'а
+microk8s kubectl get pods
+
+# Подробная информация о pod'е
+microk8s kubectl describe pod nginx-optimized
+
+# Проверить использование ресурсов
+microk8s kubectl top pod nginx-optimized
+```
+
+## Упражнение 2: Создание сервисов
+
+### 1. Сервис типа ClusterIP
+
+```yaml
+# clusterip-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-clusterip
+spec:
+  type: ClusterIP
+  selector:
+    app: nginx
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+```
+
+### 2. Сервис типа NodePort
+
+```yaml
+# nodeport-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-nodeport
+spec:
+  type: NodePort
+  selector:
+    app: nginx
+  ports:
+  - port: 80
+    targetPort: 80
+    nodePort: 30080
+    protocol: TCP
+```
+
+Применяем сервисы:
+```bash
+microk8s kubectl apply -f clusterip-service.yaml
+microk8s kubectl apply -f nodeport-service.yaml
+```
+
+### Проверка сервисов
+
+```bash
+# Показать все сервисы
+microk8s kubectl get services
+
+# Проверить доступность через NodePort
+curl http://localhost:30080
+```
+
+## Упражнение 3: Работа с ConfigMap
+
+### Создание ConfigMap
+
+```yaml
+# configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  # Простые ключ-значение
+  APP_NAME: "My Application"
+  ENVIRONMENT: "development"
+  LOG_LEVEL: "INFO"
+  
+  # Конфигурационный файл
+  nginx-config.conf: |
+    server {
+        listen 80;
+        server_name localhost;
+        
+        location / {
+            root /usr/share/nginx/html;
+            index index.html;
+        }
+        
+        location /health {
+            access_log off;
+            return 200 "healthy\n";
+        }
+    }
+```
+
+### Pod с использованием ConfigMap через переменные окружения
+
+```yaml
+# pod-with-configmap-env.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-with-config-env
+spec:
+  containers:
+  - name: app-container
+    image: busybox:latest
+    command: ['sh', '-c', 'echo "App: $APP_NAME, Env: $ENVIRONMENT, Log: $LOG_LEVEL" && sleep 3600']
+    env:
+    - name: APP_NAME
+      valueFrom:
+        configMapKeyRef:
+          name: app-config
+          key: APP_NAME
+    - name: ENVIRONMENT
+      valueFrom:
+        configMapKeyRef:
+          name: app-config
+          key: ENVIRONMENT
+    - name: LOG_LEVEL
+      valueFrom:
+        configMapKeyRef:
+          name: app-config
+          key: LOG_LEVEL
+    resources:
+      requests:
+        memory: "32Mi"
+        cpu: "10m"
+      limits:
+        memory: "64Mi"
+        cpu: "50m"
+```
+
+### Pod с использованием ConfigMap через файлы
+
+```yaml
+# pod-with-configmap-volume.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-with-config
+spec:
+  containers:
+  - name: nginx-container
+    image: nginx:alpine
+    ports:
+    - containerPort: 80
+    volumeMounts:
+    - name: config-volume
+      mountPath: /etc/nginx/conf.d
+      readOnly: true
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+  volumes:
+  - name: config-volume
+    configMap:
+      name: app-config
+      items:
+      - key: nginx-config.conf
+        path: default.conf
+```
+
+Применяем ConfigMap и Pod'ы:
+```bash
+microk8s kubectl apply -f configmap.yaml
+microk8s kubectl apply -f pod-with-configmap-env.yaml
+microk8s kubectl apply -f pod-with-configmap-volume.yaml
+```
+
+## Упражнение 4: Работа с Secrets
+
+### Создание Secrets
+
+#### Способ 1: Создание через командную строку
+
+```bash
+# Создание secret с данными в кодировке base64
+echo -n 'my-secret-username' | base64
+echo -n 'my-secret-password' | base64
+
+# Создание secret через kubectl
+microk8s kubectl create secret generic app-secrets \
+  --from-literal=username=my-secret-username \
+  --from-literal=password=my-secret-password
+```
+
+#### Способ 2: Создание через YAML файл
+
+```yaml
+# secrets.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secrets-yaml
+type: Opaque
+data:
+  # Данные должны быть в base64
+  database-url: bXlzcWw6Ly9kYjoxMjM0NTZAbG9jYWxob3N0L2FwcA==
+  api-key: YXBpLWtleS1zZWNyZXQtdmFsdWU=
+```
+
+### Pod с использованием Secrets через переменные окружения
+
+```yaml
+# pod-with-secrets-env.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-with-secrets-env
+spec:
+  containers:
+  - name: app-container
+    image: busybox:latest
+    command: ['sh', '-c', 'echo "User: $DB_USERNAME, Pass: $DB_PASSWORD" && sleep 3600']
+    env:
+    - name: DB_USERNAME
+      valueFrom:
+        secretKeyRef:
+          name: app-secrets
+          key: username
+    - name: DB_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: app-secrets
+          key: password
+    resources:
+      requests:
+        memory: "32Mi"
+        cpu: "10m"
+      limits:
+        memory: "64Mi"
+        cpu: "50m"
+```
+
+### Pod с использованием Secrets через файлы
+
+```yaml
+# pod-with-secrets-volume.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-with-secrets-volume
+spec:
+  containers:
+  - name: app-container
+    image: busybox:latest
+    command: ['sh', '-c', 'ls -la /etc/secrets/ && cat /etc/secrets/username && sleep 3600']
+    volumeMounts:
+    - name: secrets-volume
+      mountPath: /etc/secrets
+      readOnly: true
+    resources:
+      requests:
+        memory: "32Mi"
+        cpu: "10m"
+      limits:
+        memory: "64Mi"
+        cpu: "50m"
+  volumes:
+  - name: secrets-volume
+    secret:
+      secretName: app-secrets
+```
+
+Применяем Secrets и Pod'ы:
+```bash
+microk8s kubectl apply -f secrets.yaml
+microk8s kubectl apply -f pod-with-secrets-env.yaml
+microk8s kubectl apply -f pod-with-secrets-volume.yaml
+```
+
+## Упражнение 5: Комплексный пример - Приложение с ConfigMap и Secrets
+
+```yaml
+# complete-app.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-app-config
+data:
+  config.js: |
+    window.APP_CONFIG = {
+      apiUrl: "/api/v1",
+      features: {
+        analytics: true,
+        notifications: false
+      }
+    }
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: web-app-secrets
+type: Opaque
+data:
+  # echo -n 'production-db' | base64
+  db-name: cHJvZHVjdGlvbi1kYg==
+  # echo -n 'secret-api-key-123' | base64
+  api-secret: c2VjcmV0LWFwaS1rZXktMTIz
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: complete-web-app
+  labels:
+    app: web-app
+spec:
+  containers:
+  - name: web-container
+    image: nginx:alpine
+    ports:
+    - containerPort: 80
+    env:
+    - name: DATABASE_NAME
+      valueFrom:
+        secretKeyRef:
+          name: web-app-secrets
+          key: db-name
+    - name: API_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: web-app-secrets
+          key: api-secret
+    volumeMounts:
+    - name: config-volume
+      mountPath: /usr/share/nginx/html/config.js
+      subPath: config.js
+    - name: secrets-volume
+      mountPath: /etc/app-secrets
+      readOnly: true
+    resources:
+      requests:
+        memory: "96Mi"
+        cpu: "100m"
+      limits:
+        memory: "192Mi"
+        cpu: "200m"
+  volumes:
+  - name: config-volume
+    configMap:
+      name: web-app-config
+      items:
+      - key: config.js
+        path: config.js
+  - name: secrets-volume
+    secret:
+      secretName: web-app-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-app-service
+spec:
+  type: NodePort
+  selector:
+    app: web-app
+  ports:
+  - port: 80
+    targetPort: 80
+    nodePort: 30081
+```
+
+Применяем комплексное приложение:
+```bash
+microk8s kubectl apply -f complete-app.yaml
+```
+
+## Полезные команды для мониторинга и отладки
+
+```bash
+# Просмотр всех ресурсов
+microk8s kubectl get all
+
+# Просмотр логов pod'а
+microk8s kubectl logs nginx-optimized
+
+# Интерактивный терминал в pod'е
+microk8s kubectl exec -it nginx-optimized -- /bin/sh
+
+# Проверка использования ресурсов
+microk8s kubectl top pods
+microk8s kubectl top nodes
+
+# Описание ресурса для отладки
+microk8s kubectl describe pod nginx-optimized
+
+# Проверка событий кластера
+microk8s kubectl get events --sort-by=.metadata.creationTimestamp
+```
+
+## Оптимизации для системы с 4 ГБ ОЗУ
+
+### 1. Ограничение ресурсов MicroK8s
+
+```bash
+# Создание конфигурационного файла для ограничения памяти
+sudo tee /var/snap/microk8s/current/args/kubelet > /dev/null <<EOF
+--container-runtime=remote
+--container-runtime-endpoint=unix:///var/snap/microk8s/common/run/containerd.sock
+--kubeconfig=/var/snap/microk8s/current/credentials/kubelet.config
+--cert-dir=/var/snap/microk8s/current/certs/kubelet
+--client-ca-file=/var/snap/microk8s/current/certs/ca.crt
+--anonymous-auth=false
+--network-plugin=cni
+--cni-conf-dir=/var/snap/microk8s/current/args/cni-network
+--cni-bin-dir=/var/snap/microk8s/current/opt/cni/bin
+--cluster-dns=10.152.183.10
+--cluster-domain=cluster.local
+--fail-swap-on=false
+--eviction-hard=memory.available<100Mi,nodefs.available<1Gi,imagefs.available<1Gi
+--eviction-soft=memory.available<300Mi
+--eviction-soft-grace-period=memory.available=2m
+--max-pods=50
+--system-reserved=memory=500Mi,cpu=250m
+--kube-reserved=memory=500Mi,cpu=250m
+EOF
+```
+
+### 2. Очистка ресурсов
+
+```bash
+# Удаление всех созданных ресурсов
+microk8s kubectl delete --all pods,services,configmaps,secrets
+
+# Остановка MicroK8s при необходимости
+microk8s stop
+
+# Очистка дискового пространства
+microk8s reset
+```
+
+Следующее задание выполните самостоятельно выделив оптимизированные ресурсы под ваш тип машины, согласно изученным методам выше.
 
 # 🚀 Практическое руководство по Kubernetes: Сервисы, ConfigMaps и Secrets
 
@@ -1281,254 +1805,3 @@ spec:
       volumes:
       - name: secret-volume
         secret:
-          secretName: app-secrets-files
-      - name: tls-volume
-        secret:
-          secretName: app-secrets-manual
-          items:
-          - key: encryption-key
-            path: app.key
-            mode: 0400
-```
-
-**2. Тестируем:**
-```bash
-kubectl apply -f deployment-with-secret-files.yaml
-
-# Проверяем файлы
-kubectl exec deployment/app-with-secret-files -- ls -la /etc/secrets/
-kubectl exec deployment/app-with-secret-files -- cat /etc/secrets/database.url
-kubectl exec deployment/app-with-secret-files -- ls -la /etc/ssl/private/
-
-# Проверяем права доступа
-kubectl exec deployment/app-with-secret-files -- ls -la /etc/ssl/private/app.key
-```
-
-### 🎯 Задание 3.4: Практический пример - приложение с конфигурацией и секретами
-
-**1. Создаем полную конфигурацию:**
-```yaml
-# full-app-configmap.yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: full-app-config
-data:
-  application.properties: |
-    app.name=Full Kubernetes App
-    app.version=1.0.0
-    server.port=8080
-    logging.level=INFO
-    features.auth.enabled=true
-    features.cache.enabled=false
-  nginx-config.conf: |
-    server {
-        listen 8080;
-        server_name localhost;
-        root /usr/share/nginx/html;
-        
-        location /config {
-            return 200 "Config loaded successfully\n";
-        }
-        
-        location /health {
-            access_log off;
-            return 200 "healthy\n";
-        }
-    }
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: full-app-secrets
-type: Opaque
-data:
-  # echo -n "real-database-password" | base64
-  database.password: cmVhbC1kYXRhYmFzZS1wYXNzd29yZA==
-  # echo -n "jwt-secret-key-2024" | base64
-  jwt.secret: amV0LXNlY3JldC1rZXktMjAyNA==
-  # echo -n "smtp://user:pass@smtp.example.com" | base64
-  email.url: c210cDovL3VzZXI6cGFzc0BzbXRwLmV4YW1wbGUuY29t
-```
-
-**2. Создаем Deployment который использует всё:**
-```yaml
-# full-app-deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: full-app
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: full-app
-  template:
-    metadata:
-      labels:
-        app: full-app
-    spec:
-      containers:
-      - name: app
-        image: nginx:1.25-alpine
-        ports:
-        - containerPort: 8080
-        env:
-        # Переменные из ConfigMap
-        - name: APP_NAME
-          valueFrom:
-            configMapKeyRef:
-              name: full-app-config
-              key: app.name
-        # Переменные из Secret
-        - name: DB_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: full-app-secrets
-              key: database.password
-        volumeMounts:
-        - name: config-volume
-          mountPath: /etc/app-config
-        - name: secret-volume
-          mountPath: /etc/app-secrets
-          readOnly: true
-        - name: nginx-config-volume
-          mountPath: /etc/nginx/conf.d/default.conf
-          subPath: nginx-config.conf
-        command: ["/bin/sh"]
-        args: 
-        - -c
-        - |
-          echo "Application: $APP_NAME" > /usr/share/nginx/html/index.html
-          echo "Database password: $DB_PASSWORD" >> /usr/share/nginx/html/index.html
-          echo "Config files:" >> /usr/share/nginx/html/index.html
-          ls -la /etc/app-config/ >> /usr/share/nginx/html/index.html
-          echo "Secret files:" >> /usr/share/nginx/html/index.html
-          ls -la /etc/app-secrets/ >> /usr/share/nginx/html/index.html
-          nginx -g 'daemon off;'
-      volumes:
-      - name: config-volume
-        configMap:
-          name: full-app-config
-      - name: secret-volume
-        secret:
-          secretName: full-app-secrets
-      - name: nginx-config-volume
-        configMap:
-          name: full-app-config
-          items:
-          - key: nginx-config.conf
-            path: default.conf
-```
-
-**3. Создаем сервис для доступа:**
-```yaml
-# full-app-service.yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: full-app-service
-spec:
-  type: NodePort
-  selector:
-    app: full-app
-  ports:
-  - port: 8080
-    targetPort: 8080
-    nodePort: 30088
-```
-
-**4. Тестируем полное приложение:**
-```bash
-kubectl apply -f full-app-configmap.yaml -f full-app-deployment.yaml -f full-app-service.yaml
-
-# Ждем запуска
-kubectl get pods -l app=full-app
-
-# Проверяем сервис
-kubectl get service full-app-service
-
-# Тестируем приложение
-curl http://$(minikube ip):30088
-
-# Смотрим логи
-kubectl logs deployment/full-app -f
-```
-
----
-
-## 🧪 ЧЕК-ЛИСТ ПРОВЕРКИ ЗНАНИЙ
-
-### Проверьте себя:
-
-**✅ Сервисы:**
-- [ ] Могу создать ClusterIP сервис
-- [ ] Могу создать NodePort сервис  
-- [ ] Понимаю разницу между типами сервисов
-- [ ] Умею тестировать доступность сервисов
-
-**✅ ConfigMaps:**
-- [ ] Могу создать ConfigMap из файлов, literals и YAML
-- [ ] Умею подключать ConfigMap как переменные окружения
-- [ ] Умею монтировать ConfigMap как файлы
-- [ ] Понимаю как обновлять ConfigMap
-
-**✅ Secrets:**
-- [ ] Могу создать Secret разными способами
-- [ ] Понимаю что данные в Secrets хранятся в base64
-- [ ] Умею использовать Secrets как переменные и файлы
-- [ ] Понимаю ограничения безопасности Secrets
-
-### 🎯 Финальное упражнение:
-
-**Создайте полное приложение:**
-```bash
-# 1. Создайте ConfigMap с настройками приложения
-# 2. Создайте Secret с паролями и ключами
-# 3. Разверните Deployment который использует оба
-# 4. Создайте ClusterIP сервис для внутреннего доступа
-# 5. Создайте NodePort сервис для внешнего доступа
-# 6. Протестируйте работу приложения
-```
-
-### 🧹 Очистка:
-```bash
-# Удаляем все созданные ресурсы
-kubectl delete all --all
-kubectl delete configmap --all
-kubectl delete secret --all
-
-# Останавливаем Minikube
-minikube stop
-```
-
----
-
-## 💡 ПОЛЕЗНЫЕ КОМАНДЫ ДЛЯ РАБОТЫ
-
-```bash
-# Просмотр ресурсов
-kubectl get configmaps,secrets,services,pods
-
-# Детальная информация
-kubectl describe configmap <name>
-kubectl describe secret <name> 
-kubectl describe service <name>
-
-# Проверка внутри Pod
-kubectl exec <pod> -- env
-kubectl exec <pod> -- ls -la /path/to/mount
-kubectl exec <pod> -- cat /path/to/file
-
-# Отладка сервисов
-kubectl get endpoints <service>
-kubectl logs <pod>
-```
-
-
-1. **Secrets не полностью безопасны** - они только base64 encoded
-2. **ConfigMap обновляется не мгновенно** - может потребоваться перезапуск Pod
-3. **NodePort порты** должны быть в диапазоне 30000-32767
-4. **Всегда проверяйте** что селекторы сервисов совпадают с метками Pod
-5. **Используйте describe** для диагностики проблем
-
